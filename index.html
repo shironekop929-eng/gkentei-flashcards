@@ -67,6 +67,11 @@ ul{margin:8px 0;padding-left:20px}
 .exp strong{color:#ef7aa8}
 .verdict{font-weight:700;font-size:16px;margin-bottom:6px}
 .verdict.ok{color:var(--ok)} .verdict.ng{color:var(--ng)}
+.toolbar{display:flex;justify-content:flex-end;gap:8px;margin:0 0 8px}
+.shuffle-btn{padding:7px 14px;border-radius:18px;background:#fff;color:var(--accent2);border:2px solid #e9dcff;
+  font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:4px}
+.shuffle-btn:active{transform:scale(.96)}
+.shuffle-btn.on{background:var(--accent2);color:#fff;border-color:var(--accent2);box-shadow:0 3px 10px rgba(196,166,240,.45)}
 .nav{position:fixed;bottom:0;left:0;right:0;display:flex;gap:9px;padding:12px 14px;max-width:620px;margin:0 auto;
   background:linear-gradient(transparent,var(--bg2) 35%)}
 .nav button{flex:1;padding:14px;border:none;border-radius:16px;font-size:15px;font-weight:700;font-family:inherit;
@@ -86,6 +91,7 @@ ul{margin:8px 0;padding-left:20px}
     <div class="bubble"><div class="bname" id="bname"></div><span id="btext"></span></div>
   </aside>
   <main class="content">
+    <div class="toolbar"><button class="shuffle-btn" id="shuf" onclick="toggleShuffle()">🔀 シャッフル</button></div>
     <div class="prog" id="prog"></div>
     <div class="bar"><div id="barfill"></div></div>
     <div class="card" id="card"></div>
@@ -97,10 +103,17 @@ const C = {"flash": [{"label": "AIとは", "img": "data:image/jpeg;base64,/9j/4A
 const FLASH=C.flash, QUIZ=C.quiz;
 let mode='flash', sec=0, idx=0, shown=false;
 let qi=0, answered=false, okCnt=0, ansCnt=0;
+let flashOrder=FLASH.map(d=>d.cards.map((_,i)=>i));
+let flashSh=FLASH.map(()=>false);
+let quizOrder=QUIZ.map((_,i)=>i);
+let quizSh=false;
 const tabs=document.getElementById('tabs'),card=document.getElementById('card'),nav=document.getElementById('nav');
 const prog=document.getElementById('prog'),bar=document.getElementById('barfill');
 const bimg=document.getElementById('bimg'),bname=document.getElementById('bname'),btext=document.getElementById('btext');
+const shufBtn=document.getElementById('shuf');
 const pick=a=>a[Math.floor(Math.random()*a.length)];
+function shuf(a){const r=a.slice();for(let i=r.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[r[i],r[j]]=[r[j],r[i]];}return r;}
+function ident(n){return Array.from({length:n},(_,i)=>i);}
 
 FLASH.forEach((d,i)=>{const b=document.createElement('div');b.className='tab';b.textContent=d.label+'('+d.cards.length+')';
   b.onclick=()=>{mode='flash';sec=i;idx=0;shown=false;say(pick(d.msgs));render();};tabs.appendChild(b);});
@@ -115,42 +128,69 @@ function setBuddy(){
 function setTabs(){[...tabs.children].forEach((t,i)=>{
   if(i<FLASH.length)t.classList.toggle('active',mode==='flash'&&i===sec);
   else t.classList.toggle('active',mode==='quiz');});}
+function setShufBtn(){
+  const on=(mode==='flash')?flashSh[sec]:quizSh;
+  shufBtn.classList.toggle('on',on);
+  shufBtn.textContent=on?'🔀 シャッフル中（再シャッフルはもう一度タップ）':'🔀 シャッフル';
+}
+function toggleShuffle(){
+  if(mode==='flash'){
+    if(flashSh[sec]){flashOrder[sec]=shuf(ident(FLASH[sec].cards.length));say('もう一度シャッフルしたよ🎲');}
+    else{flashSh[sec]=true;flashOrder[sec]=shuf(ident(FLASH[sec].cards.length));say('シャッフルしたよ！順番が変わるよ🎲');}
+    idx=0;shown=false;
+  }else{
+    if(quizSh){quizOrder=shuf(ident(QUIZ.length));say('もう一度シャッフルしたよ🎲');}
+    else{quizSh=true;quizOrder=shuf(ident(QUIZ.length));say('シャッフルモードで挑戦🎲');}
+    qi=0;answered=false;
+  }
+  render();
+}
+function unshuffleCurrent(){
+  if(mode==='flash'){flashSh[sec]=false;flashOrder[sec]=ident(FLASH[sec].cards.length);idx=0;shown=false;}
+  else{quizSh=false;quizOrder=ident(QUIZ.length);qi=0;answered=false;}
+  say('元の順番に戻したよ📚');render();
+}
 
-function render(){setTabs();setBuddy();window.scrollTo(0,0);mode==='flash'?renderFlash():renderQuiz();}
+function render(){setTabs();setBuddy();setShufBtn();window.scrollTo(0,0);mode==='flash'?renderFlash():renderQuiz();}
 
 function renderFlash(){
-  const cards=FLASH[sec].cards,c=cards[idx];
-  prog.textContent=FLASH[sec].label+'　'+(idx+1)+' / '+cards.length+' 枚';
+  const cards=FLASH[sec].cards,order=flashOrder[sec],realIdx=order[idx],c=cards[realIdx];
+  const shTag=flashSh[sec]?' 🔀':'';
+  prog.textContent=FLASH[sec].label+shTag+'　'+(idx+1)+' / '+cards.length+' 枚（元: Q'+(realIdx+1)+'）';
   bar.style.width=((idx+1)/cards.length*100)+'%';
-  card.innerHTML='<div class="qlabel">Q'+(idx+1)+'</div><div class="q">'+c.q+'</div>'+
+  card.innerHTML='<div class="qlabel">Q'+(realIdx+1)+'</div><div class="q">'+c.q+'</div>'+
     '<div class="a'+(shown?' show':'')+'">'+c.a+'</div>'+(shown?'':'<div class="tap">タップで答えを見る👀</div>');
   card.onclick=()=>{shown=!shown;if(shown)say(pick(C.reveal));render();};
-  nav.innerHTML='<button onclick="prevF()">← 前</button><button class="primary" onclick="toggleF()">答え✨</button><button onclick="nextF()">次 →</button>';
+  const off=flashSh[sec]?'<button onclick="unshuffleCurrent()">順番に戻す</button>':'';
+  nav.innerHTML='<button onclick="prevF()">← 前</button><button class="primary" onclick="toggleF()">答え✨</button><button onclick="nextF()">次 →</button>'+off;
 }
 function toggleF(){shown=!shown;if(shown)say(pick(C.reveal));render();}
 function nextF(){const n=FLASH[sec].cards.length;idx=(idx+1)%n;shown=false;if(idx===0)say('一周おつかれさま！えらい💮');render();}
 function prevF(){const n=FLASH[sec].cards.length;idx=(idx-1+n)%n;shown=false;render();}
 
 function renderQuiz(){
-  const q=QUIZ[qi];
-  prog.textContent='模擬問題　第 '+(qi+1)+' 問 / '+QUIZ.length+'　｜　正解 '+okCnt+'/'+ansCnt;
+  const realIdx=quizOrder[qi],q=QUIZ[realIdx];
+  const shTag=quizSh?' 🔀':'';
+  prog.textContent='模擬問題'+shTag+'　第 '+(qi+1)+' 問 / '+QUIZ.length+'（元: 問'+(realIdx+1)+'）　｜　正解 '+okCnt+'/'+ansCnt;
   bar.style.width=((qi+1)/QUIZ.length*100)+'%';
-  let h='<div class="qlabel">問'+(qi+1)+'</div><div class="q">'+q.q+'</div><div class="choices">';
+  let h='<div class="qlabel">問'+(realIdx+1)+'</div><div class="q">'+q.q+'</div><div class="choices">';
   q.choices.forEach(ch=>{h+='<button class="choice" data-l="'+ch.l+'" onclick="answer(\''+ch.l+'\')"><span class="l">'+ch.l+'</span>'+ch.t+'</button>';});
   h+='</div><div class="exp" id="exp"></div>';
   card.innerHTML=h;card.onclick=null;
-  nav.innerHTML='<button onclick="prevQ()">← 前</button><button class="primary" onclick="nextQ()">次の問題 →</button>';
+  const off=quizSh?'<button onclick="unshuffleCurrent()">順番に戻す</button>':'';
+  nav.innerHTML='<button onclick="prevQ()">← 前</button><button class="primary" onclick="nextQ()">次の問題 →</button>'+off;
 }
 function answer(l){
   if(answered)return;answered=true;ansCnt++;
-  const q=QUIZ[qi],ok=(l===q.correct);if(ok)okCnt++;
+  const realIdx=quizOrder[qi],q=QUIZ[realIdx],ok=(l===q.correct);if(ok)okCnt++;
   card.querySelectorAll('.choice').forEach(b=>{const bl=b.dataset.l;b.disabled=true;
     if(bl===q.correct)b.classList.add('correct');else if(bl===l)b.classList.add('wrong');});
   const exp=document.getElementById('exp');
   exp.innerHTML='<div class="verdict '+(ok?'ok':'ng')+'">'+(ok?'⭕ 正解！':'❌ 不正解')+'（正解: '+q.correct+'）</div>'+q.exp;
   exp.classList.add('show');
   say(ok?pick(C.quizOk):pick(C.quizNg));
-  prog.textContent='模擬問題　第 '+(qi+1)+' 問 / '+QUIZ.length+'　｜　正解 '+okCnt+'/'+ansCnt;
+  const shTag=quizSh?' 🔀':'';
+  prog.textContent='模擬問題'+shTag+'　第 '+(qi+1)+' 問 / '+QUIZ.length+'（元: 問'+(realIdx+1)+'）　｜　正解 '+okCnt+'/'+ansCnt;
 }
 function nextQ(){qi=(qi+1)%QUIZ.length;answered=false;if(qi===0)say('全問おつかれさま！正解 '+okCnt+'/'+QUIZ.length+'だよ🌟');render();}
 function prevQ(){qi=(qi-1+QUIZ.length)%QUIZ.length;answered=false;render();}
